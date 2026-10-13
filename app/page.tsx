@@ -1,4 +1,7 @@
 
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { prisma } from "@/lib/prisma";
 import EmployeeForm from "./EmployeeForm";
 import EmployeeList from "./EmployeeList";
 
@@ -8,24 +11,15 @@ type Employee = {
   role: string;
 };
 
-async function getEmployees(): Promise<Employee[]> {
-  const response = await fetch(
-    "http://localhost:3000/api/employees",
-    { cache: "no-store" }
-  );
+async function EmployeeDirectory() {
+  await connection();
 
-  if (!response.ok) {
-    throw new Error("Failed to load employees");
-  }
-
-  return response.json();
-}
-
-export default async function Home() {
-  const employees = await getEmployees();
+  const employees: Employee[] = await prisma.employee.findMany({
+    orderBy: { id: "asc" },
+  });
 
   return (
-    <main>
+    <>
       <header className="page-header">
         <div>
           <p className="eyebrow">TEAM MANAGEMENT</p>
@@ -40,8 +34,17 @@ export default async function Home() {
       </header>
 
       <EmployeeForm />
-
       <EmployeeList employees={employees} />
+    </>
+  );
+}
+
+export default function Home() {
+  return (
+    <main>
+      <Suspense fallback={<p>Loading employees...</p>}>
+        <EmployeeDirectory />
+      </Suspense>
     </main>
   );
 }
