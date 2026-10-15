@@ -52,3 +52,14 @@ next-env.d.ts
 # Local SQLite migration backups
 /prisma/migrations-sqlite/
 /prisma/migrations-sqlite-backup/
+
+# Employee microservices - local dependencies and secrets
+/employee-microservices/**/node_modules/
+/employee-microservices/**/.env
+/employee-microservices/**/.env.*
+/employee-microservices/**/dist/
+/employee-microservices/**/src/generated/prisma/
+
+
+# Local backup files
+/app/api/employees/route.ts.backup

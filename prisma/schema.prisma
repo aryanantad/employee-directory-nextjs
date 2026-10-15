@@ -15,3 +15,27 @@ model Employee {
 
   @@map("employee")
 }
+
+
+model OtpChallenge {
+  id           String   @id @default(cuid())
+  email        String
+  codeHash     String
+  expiresAt    DateTime
+  attempts     Int      @default(0)
+  consumedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([email, createdAt])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  email     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}

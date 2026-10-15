@@ -1,7 +1,10 @@
 
+import LogoutButton from "./LogoutButton";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { getAuthenticatedUser } from "@/lib/auth";
 import EmployeeForm from "./EmployeeForm";
 import EmployeeList from "./EmployeeList";
 
@@ -11,12 +14,55 @@ type Employee = {
   role: string;
 };
 
+const EMPLOYEE_SERVICE_URL =
+  process.env.EMPLOYEE_SERVICE_URL || "http://localhost:4002";
+
 async function EmployeeDirectory() {
   await connection();
 
-  const employees: Employee[] = await prisma.employee.findMany({
-    orderBy: { id: "asc" },
-  });
+  // Check whether the user has a valid session.
+  const user = await getAuthenticatedUser();
+
+  // Send signed-out users to the login page.
+  if (!user) {
+    redirect("/login");
+  }
+
+  // Forward the logged-in user's cookie to Employee Service.
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore
+    .getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join("; ");
+
+  let employees: Employee[] = [];
+
+  try {
+    const response = await fetch(
+      `${EMPLOYEE_SERVICE_URL}/api/employees`,
+      {
+        headers: {
+          Cookie: cookieHeader,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (response.status === 401) {
+      redirect("/login");
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Employee Service returned status ${response.status}`,
+      );
+    }
+
+    employees = await response.json();
+  } catch (error) {
+    console.error("Failed to fetch employees:", error);
+    throw error;
+  }
 
   return (
     <>
@@ -25,6 +71,8 @@ async function EmployeeDirectory() {
           <p className="eyebrow">TEAM MANAGEMENT</p>
           <h1>Employee Directory</h1>
           <p>Manage your team members in one place.</p>
+          <p>Signed in as: {user.email}</p>
+          <LogoutButton />
         </div>
 
         <div className="team-count">
