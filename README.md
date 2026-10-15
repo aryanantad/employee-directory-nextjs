@@ -1,85 +1,80 @@
-# Employee Directory
+# Employee Directory — Next.js
 
-A full-stack Employee Directory web application built with **Next.js, TypeScript, Prisma ORM, and PostgreSQL**. The application allows users to manage employee records through a simple web interface, with a live deployment on Vercel and a hosted Neon PostgreSQL database.
+A full-stack Employee Directory application built with **Next.js, TypeScript, Prisma, PostgreSQL, and Node.js microservices**. The project includes employee management, email-based OTP authentication, and an email feature for employee-related workflows.
 
-## Live Demo
-
-- **Live Application:** https://employee-directory-nextjs.vercel.app/
-- **GitHub Repository:** https://github.com/aryanantad/employee-directory-nextjs
+**Repository:** [employee-directory-nextjs](https://github.com/aryanantad/employee-directory-nextjs)
 
 ## Features
 
-- View employee records.
-- Add new employees.
-- Delete employee records.
-- Display the total number of employees.
-- REST API for employee data.
-- Database access through Prisma ORM.
-- PostgreSQL database integration.
-- Responsive web interface.
-- Production deployment using Vercel.
+- **Employee directory:** View and manage employee records, including names and roles.
+- **Employee CRUD API:** Retrieve employee records and perform supported employee operations.
+- **Email OTP authentication:** Request a one-time password by email and verify it to authenticate.
+- **OTP security:** OTP expiry, hashed OTP storage, request and attempt limits, and session handling.
+- **Logout:** API endpoint and UI component for ending a session.
+- **Email integration:** Employee-related email functionality using Nodemailer.
+- **Database integration:** Prisma ORM for working with the application's database.
+- **Microservice architecture:** Separate Auth Service and Employee Service codebases.
+- **Next.js App Router:** Application pages and API routes organized using the App Router.
 
 ## Tech Stack
 
 | Technology | Purpose |
 |---|---|
-| Next.js 16 | React framework and server-side functionality |
-| React | User interface |
-| TypeScript | Type-safe development |
-| Prisma ORM | Database queries and data access |
+| Next.js 16 | Web application and API routes |
+| React and TypeScript | User interface and typed application code |
+| Node.js | Microservice runtime |
 | PostgreSQL | Relational database |
-| Neon | Hosted PostgreSQL database |
-| Tailwind CSS | Styling |
-| Vercel | Application hosting |
+| Prisma ORM 6 | Database access and schema management |
+| Nodemailer | Email delivery |
 | Git and GitHub | Version control and source code hosting |
 
-## Application Architecture
+## Architecture
 
-The application follows this general flow:
+The repository contains the main Next.js application and two microservices:
 
 ```text
-User Interface
-      |
-      v
-Next.js Application
-      |
-      v
-Prisma ORM
-      |
-      v
-PostgreSQL Database
+employee-directory-nextjs/
+├── app/
+│   ├── api/
+│   │   ├── auth/
+│   │   │   ├── logout/
+│   │   │   ├── request-otp/
+│   │   │   └── verify-otp/
+│   │   ├── employees/
+│   │   └── ...
+│   ├── login/
+│   ├── LogoutButton.tsx
+│   └── page.tsx
+├── employee-microservices/
+│   ├── auth-service/
+│   └── employee-service/
+├── lib/
+│   └── auth.ts
+├── prisma/
+│   ├── migrations/
+│   └── schema.prisma
+├── package.json
+└── README.md
 ```
 
-The deployed application runs on Vercel and connects to Neon PostgreSQL. The local development environment can connect to a separate local PostgreSQL database.
+### Services
 
-## API Endpoints
+- **Next.js application:** Provides the web interface and application API routes.
+- **Auth Service:** Separate Node.js service for authentication-related functionality.
+- **Employee Service:** Separate Node.js service for employee-related functionality.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/employees` | Retrieve employee records |
-| POST | `/api/employees` | Add a new employee |
-| DELETE | `/api/employees` | Delete an employee |
-
-## Database Schema
-
-The application uses an `Employee` model with the following fields:
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | Integer | Unique employee ID, generated automatically |
-| `name` | String | Employee name |
-| `role` | String | Employee job role |
+The services use local development ports **4001** (Auth Service) and **4002** (Employee Service). These local addresses must be replaced with reachable service URLs when deploying services separately.
 
 ## Getting Started
 
 ### Prerequisites
 
-Install the following before running the project:
+Install the following:
 
-- Node.js
-- npm
-- PostgreSQL
+- Node.js and npm
+- PostgreSQL database
 - Git
+- A code editor such as Visual Studio Code
 
 ### 1. Clone the repository
 
@@ -96,71 +91,146 @@ npm install
 
 ### 3. Configure environment variables
 
-Create a `.env` file in the project root and add your PostgreSQL connection string:
+Create a local `.env` file in the project root. Configure the PostgreSQL connection string and the other environment variables required by the application.
+
+Example of the general configuration:
 
 ```env
 DATABASE_URL="your_postgresql_connection_string"
+EMPLOYEE_SERVICE_URL="http://localhost:4002"
 ```
 
-Use your own local PostgreSQL connection string for local development. The deployed application uses the Neon connection string configured in Vercel.
+The example is a template, not a working credential. Configure email/SMTP credentials and any other variables required by the source code. Never commit `.env` files, passwords, OTP secrets, or database credentials to GitHub.
 
-**Security:** Never commit your `.env` file, database password, or other secrets to GitHub.
+### 4. Configure the database
 
-### 4. Generate Prisma Client
+Review `prisma/schema.prisma` and the existing migration files. Ensure `DATABASE_URL` points to your intended development database before running any database commands.
+
+Generate Prisma Client:
 
 ```bash
 npx prisma generate
 ```
 
-### 5. Apply database migrations
+Apply migrations only after checking that the database URL and migration plan are correct:
 
 ```bash
 npx prisma migrate deploy
 ```
 
-Run this command only against the database whose migrations you intend to apply. Do not use database-reset commands on a database containing data you need to keep.
+Use a dedicated development database when experimenting. Do not run database migrations against production without reviewing them first.
 
-### 6. Start the development server
+### 5. Start the Next.js application
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Deployment
+### 6. Run the microservices
 
-The application is deployed using Vercel.
+Each service has its own `package.json`. Open a separate terminal for each service, install its dependencies, configure its own required environment variables, and use its development script.
 
-1. Import the GitHub repository into Vercel.
-2. Configure `DATABASE_URL` with the Neon PostgreSQL connection string in the appropriate Vercel environment.
-3. Ensure the database migrations have been applied.
-4. Deploy the application.
-5. Test the employee list and CRUD API endpoints.
+Auth Service:
+
+```bash
+cd employee-microservices/auth-service
+npm install
+npm run dev
+```
+
+Employee Service:
+
+```bash
+cd employee-microservices/employee-service
+npm install
+npm run dev
+```
+
+The services expect their own configuration and database connectivity where required. Running the Next.js app alone does not automatically start the two microservices.
+
+## Authentication Flow
+
+1. The user requests an OTP through the authentication interface.
+2. The application sends the OTP to the configured email address.
+3. The user submits the OTP for verification.
+4. The authentication flow validates the OTP and its expiry and applies the configured attempt limits.
+5. A valid verification establishes a session.
+6. The user can log out through the logout functionality.
+
+Email delivery and authentication require valid environment configuration and must be tested in the target environment.
+
+## API Routes
+
+| Route | Purpose |
+|---|---|
+| `POST /api/auth/request-otp` | Request an email OTP |
+| `POST /api/auth/verify-otp` | Verify an OTP |
+| `POST /api/auth/logout` | End the current session |
+| `/api/employees` | Employee API route |
+| `/api/employees/send-email` | Employee-related email functionality |
+
+Check the route handlers for the exact HTTP methods, request bodies, and response formats before integrating other clients.
+
+## Build and Validation
+
+Run the production build for the main application:
+
+```bash
+npm run build
+```
+
+Build the Auth Service:
+
+```bash
+cd employee-microservices/auth-service
+npm run build
+```
+
+Build the Employee Service:
+
+```bash
+cd employee-microservices/employee-service
+npm run build
+```
+
+These builds have completed successfully in the development environment. Successful compilation does not by itself verify live email delivery, production database connectivity, inter-service communication, or production deployment.
+
+## Deployment Notes
+
+The source code is available on GitHub, but hosting the Next.js application does not automatically host the two microservices.
+
+Before deploying:
+
+- Configure production environment variables in the hosting platform.
+- Host each microservice on a reachable service or configure an appropriate supported deployment architecture.
+- Replace local service URLs such as `http://localhost:4002` with the correct reachable URL.
+- Configure production database connectivity and apply reviewed migrations.
+- Configure and test email delivery, authentication sessions, and employee API calls.
+- Keep all secrets out of source control.
+
+## Current Status
+
+- Next.js production build: successful.
+- Auth Service TypeScript build: successful.
+- Employee Service build and Prisma Client generation: successful.
+- GitHub commit: `750b488` — `Add OTP authentication and employee microservices`.
+- Production hosting and end-to-end production verification: still to be configured and tested.
 
 ## Learning Outcomes
 
-This project provided practical experience with:
+This project has provided hands-on practice with:
 
-- Building a full-stack application using Next.js.
-- Creating API endpoints for CRUD operations.
-- Connecting a web application to PostgreSQL.
-- Using Prisma ORM for database queries.
-- Managing environment variables securely.
-- Using Git and GitHub for version control.
-- Deploying an application with Vercel.
-- Connecting a production application to a hosted database.
-
-## Future Improvements
-
-- Edit employee details.
-- Add employee search and filtering.
-- Implement authentication and authorization.
-- Add form validation and improved error handling.
-- Add pagination for larger employee lists.
+- Full-stack development using Next.js and TypeScript.
+- REST API routes and employee data operations.
+- Database schemas and Prisma ORM.
+- Email-based OTP authentication and session handling.
+- Splitting application functionality into microservices.
+- Environment configuration, build validation, and Git/GitHub workflows.
 
 ## Author
 
 **Aryan Antad**
 
-GitHub: https://github.com/aryanantad
+[GitHub Repository](https://github.com/aryanantad/employee-directory-nextjs)
