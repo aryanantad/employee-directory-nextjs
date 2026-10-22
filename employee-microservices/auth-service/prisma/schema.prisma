@@ -31,3 +31,18 @@ model AuthSession {
   @@index([email])
   @@index([expiresAt])
 }
+
+
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  tokenHash           String    @unique
+  email               String
+  expiresAt            DateTime
+  revokedAt            DateTime?
+  replacedByTokenHash String?
+  createdAt            DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}

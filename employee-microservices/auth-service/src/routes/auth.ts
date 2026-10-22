@@ -1,5 +1,6 @@
 
-import { Router, type Request, type Response, type NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import { Router, type Request, type Response } from "express";
 import nodemailer from "nodemailer";
 import {
   createHmac,
@@ -14,8 +15,15 @@ const router = Router();
 
 const OTP_LIFETIME_MS = 5 * 60 * 1000;
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const ACCESS_TOKEN_LIFETIME_SECONDS = 60;
+const REFRESH_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
+
 const COOKIE_NAME = "auth_session";
+const ACCESS_TOKEN_COOKIE = "access_token";
+const REFRESH_TOKEN_COOKIE = "refresh_token";
+
+const JWT_ISSUER = "employee-directory-auth";
 
 function normalizeEmail(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -32,10 +40,7 @@ function hashSessionToken(token: string): string {
 }
 
 function validEmail(email: string): boolean {
-  return (
-    email.length <= 254 &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  );
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function getCookie(req: Request, name: string): string | null {
@@ -47,6 +52,7 @@ function getCookie(req: Request, name: string): string | null {
     if (separator < 0) continue;
 
     const key = part.slice(0, separator).trim();
+
     if (key === name) {
       try {
         return decodeURIComponent(part.slice(separator + 1).trim());
@@ -57,6 +63,36 @@ function getCookie(req: Request, name: string): string | null {
   }
 
   return null;
+}
+
+function getUserRole(email: string): "admin" | "user" {
+  const adminEmail = normalizeEmail(process.env.ADMIN_EMAIL);
+  return adminEmail && email === adminEmail ? "admin" : "user";
+}
+
+function clearAuthCookies(res: Response) {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const options = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "lax" as const,
+    path: "/",
+  };
+
+  res.clearCookie(COOKIE_NAME, options);
+  res.clearCookie(ACCESS_TOKEN_COOKIE, options);
+  res.clearCookie(REFRESH_TOKEN_COOKIE, options);
+}
+
+function setAuthCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge,
+  };
 }
 
 async function findSession(req: Request) {
@@ -73,6 +109,7 @@ async function findSession(req: Request) {
         where: { id: session.id },
       });
     }
+
     return null;
   }
 
@@ -96,6 +133,7 @@ router.post("/request-otp", async (req, res) => {
 
     if (!secret || !smtpUser || !smtpPass) {
       console.error("OTP or SMTP environment variables are missing.");
+
       return res.status(500).json({
         message: "Email service is not configured.",
       });
@@ -132,7 +170,10 @@ router.post("/request-otp", async (req, res) => {
     try {
       const transporter = nodemailer.createTransport({
         service: "gmail",
-        auth: { user: smtpUser, pass: smtpPass },
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
       });
 
       await transporter.sendMail({
@@ -146,14 +187,17 @@ router.post("/request-otp", async (req, res) => {
         where: { id: challenge.id },
         data: { consumedAt: new Date() },
       });
+
       throw error;
     }
 
     return res.json({
-      message: "If the address can receive email, a sign-in code has been sent.",
+      message:
+        "If the address can receive email, a sign-in code has been sent.",
     });
   } catch (error) {
     console.error("OTP request failed:", error);
+
     return res.status(500).json({
       message: "Could not request a sign-in code. Please try again later.",
     });
@@ -164,9 +208,8 @@ router.post("/request-otp", async (req, res) => {
 router.post("/verify-otp", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
-    const otp = typeof req.body?.otp === "string"
-      ? req.body.otp.trim()
-      : "";
+    const otp =
+      typeof req.body?.otp === "string" ? req.body.otp.trim() : "";
 
     if (!validEmail(email) || !/^\d{6}$/.test(otp)) {
       return res.status(400).json({
@@ -174,18 +217,25 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    const secret = process.env.OTP_HMAC_SECRET;
-    if (!secret) {
+    const otpSecret = process.env.OTP_HMAC_SECRET;
+    const jwtSecret = process.env.JWT_ACCESS_SECRET;
+
+    if (!otpSecret) {
+      return res.status(500).json({
+        message: "Authentication service is not configured.",
+      });
+    }
+
+    if (!jwtSecret || jwtSecret.length < 32) {
+      console.error("JWT_ACCESS_SECRET is missing or too short.");
+
       return res.status(500).json({
         message: "Authentication service is not configured.",
       });
     }
 
     const challenge = await prisma.otpChallenge.findFirst({
-      where: {
-        email,
-        consumedAt: null,
-      },
+      where: { email, consumedAt: null },
       orderBy: { createdAt: "desc" },
     });
 
@@ -207,12 +257,13 @@ router.post("/verify-otp", async (req, res) => {
     }
 
     const expectedHash = Buffer.from(challenge.codeHash, "hex");
-    const providedHash = Buffer.from(hashOtp(email, otp, secret), "hex");
+    const providedHash = Buffer.from(hashOtp(email, otp, otpSecret), "hex");
 
-    if (
-      expectedHash.length !== providedHash.length ||
-      !timingSafeEqual(expectedHash, providedHash)
-    ) {
+    const isValid =
+      expectedHash.length === providedHash.length &&
+      timingSafeEqual(expectedHash, providedHash);
+
+    if (!isValid) {
       const attempts = challenge.attempts + 1;
 
       await prisma.otpChallenge.update({
@@ -225,14 +276,15 @@ router.post("/verify-otp", async (req, res) => {
         },
       });
 
-      return res.status(400).json({
-        message: attempts >= MAX_OTP_ATTEMPTS
-          ? "Too many incorrect attempts. Request a new code."
-          : "The code is incorrect.",
+      return res.status(attempts >= MAX_OTP_ATTEMPTS ? 429 : 400).json({
+        message:
+          attempts >= MAX_OTP_ATTEMPTS
+            ? "Too many incorrect attempts. Request a new code."
+            : "The code is incorrect.",
       });
     }
 
-    // Consume the code before creating a session, so it cannot be reused.
+    // Atomically consume the OTP so it cannot be reused.
     const consumed = await prisma.otpChallenge.updateMany({
       where: {
         id: challenge.id,
@@ -249,35 +301,195 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + SESSION_LIFETIME_MS);
+    const role = getUserRole(email);
+    const sessionToken = randomBytes(32).toString("hex");
+    const refreshToken = randomBytes(32).toString("hex");
 
-    await prisma.authSession.create({
-      data: {
-        tokenHash: hashSessionToken(token),
-        email,
-        expiresAt,
+    const sessionExpiresAt = new Date(Date.now() + SESSION_LIFETIME_MS);
+    const refreshTokenExpiresAt = new Date(
+      Date.now() + REFRESH_TOKEN_LIFETIME_MS,
+    );
+
+    // Create the session and refresh token together.
+    await prisma.$transaction([
+      prisma.authSession.create({
+        data: {
+          tokenHash: hashSessionToken(sessionToken),
+          email,
+          expiresAt: sessionExpiresAt,
+        },
+      }),
+      prisma.refreshToken.create({
+        data: {
+          tokenHash: hashSessionToken(refreshToken),
+          email,
+          expiresAt: refreshTokenExpiresAt,
+        },
+      }),
+    ]);
+
+    const accessToken = jwt.sign(
+      { email, role },
+      jwtSecret,
+      {
+        algorithm: "HS256",
+        expiresIn: ACCESS_TOKEN_LIFETIME_SECONDS,
+        issuer: JWT_ISSUER,
+        subject: email,
       },
-    });
+    );
 
-    const isProduction = process.env.NODE_ENV === "production";
+    res.cookie(
+      COOKIE_NAME,
+      sessionToken,
+      setAuthCookieOptions(SESSION_LIFETIME_MS),
+    );
 
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      path: "/",
-      maxAge: SESSION_LIFETIME_MS,
-    });
+    res.cookie(
+      ACCESS_TOKEN_COOKIE,
+      accessToken,
+      setAuthCookieOptions(ACCESS_TOKEN_LIFETIME_SECONDS * 1000),
+    );
+
+    res.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      setAuthCookieOptions(REFRESH_TOKEN_LIFETIME_MS),
+    );
 
     return res.json({
       message: "Login successful.",
-      user: { email },
+      user: { email, role },
+      accessTokenExpiresIn: ACCESS_TOKEN_LIFETIME_SECONDS,
     });
   } catch (error) {
     console.error("OTP verification failed:", error);
+
     return res.status(500).json({
       message: "Could not verify the code. Please try again.",
+    });
+  }
+});
+
+// POST /api/auth/refresh
+// Rotates the refresh token and issues a new short-lived access token.
+router.post("/refresh", async (req, res) => {
+  try {
+    const rawToken = getCookie(req, REFRESH_TOKEN_COOKIE);
+
+    if (!rawToken) {
+      clearAuthCookies(res);
+
+      return res.status(401).json({
+        message: "Refresh token missing. Please sign in again.",
+      });
+    }
+
+    const tokenHash = hashSessionToken(rawToken);
+    const now = new Date();
+
+    const existing = await prisma.refreshToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (
+      !existing ||
+      existing.revokedAt !== null ||
+      existing.expiresAt <= now
+    ) {
+      clearAuthCookies(res);
+
+      return res.status(401).json({
+        message: "Refresh token is invalid or expired. Please sign in again.",
+      });
+    }
+
+    const jwtSecret = process.env.JWT_ACCESS_SECRET;
+
+    if (!jwtSecret || jwtSecret.length < 32) {
+      console.error("JWT_ACCESS_SECRET is missing or too short.");
+
+      return res.status(500).json({
+        message: "Authentication service is not configured.",
+      });
+    }
+
+    const newRefreshToken = randomBytes(32).toString("hex");
+    const newRefreshTokenHash = hashSessionToken(newRefreshToken);
+    const newRefreshTokenExpiresAt = new Date(
+      Date.now() + REFRESH_TOKEN_LIFETIME_MS,
+    );
+
+    // Revoke the old token and store its replacement atomically.
+    const rotated = await prisma.$transaction(async (tx) => {
+      const result = await tx.refreshToken.updateMany({
+        where: {
+          id: existing.id,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: {
+          revokedAt: now,
+          replacedByTokenHash: newRefreshTokenHash,
+        },
+      });
+
+      if (result.count !== 1) {
+        return false;
+      }
+
+      await tx.refreshToken.create({
+        data: {
+          tokenHash: newRefreshTokenHash,
+          email: existing.email,
+          expiresAt: newRefreshTokenExpiresAt,
+        },
+      });
+
+      return true;
+    });
+
+    if (!rotated) {
+      clearAuthCookies(res);
+
+      return res.status(401).json({
+        message: "Refresh token has already been used. Please sign in again.",
+      });
+    }
+
+    const role = getUserRole(existing.email);
+    const accessToken = jwt.sign(
+      { email: existing.email, role },
+      jwtSecret,
+      {
+        algorithm: "HS256",
+        expiresIn: ACCESS_TOKEN_LIFETIME_SECONDS,
+        issuer: JWT_ISSUER,
+        subject: existing.email,
+      },
+    );
+
+    res.cookie(
+      ACCESS_TOKEN_COOKIE,
+      accessToken,
+      setAuthCookieOptions(ACCESS_TOKEN_LIFETIME_SECONDS * 1000),
+    );
+
+    res.cookie(
+      REFRESH_TOKEN_COOKIE,
+      newRefreshToken,
+      setAuthCookieOptions(REFRESH_TOKEN_LIFETIME_MS),
+    );
+
+    return res.json({
+      message: "Access token refreshed.",
+      accessTokenExpiresIn: ACCESS_TOKEN_LIFETIME_SECONDS,
+    });
+  } catch (error) {
+    console.error("Token refresh failed:", error);
+
+    return res.status(500).json({
+      message: "Could not refresh the session. Please try again.",
     });
   }
 });
@@ -288,17 +500,26 @@ router.get("/me", async (req, res) => {
     const session = await findSession(req);
 
     if (!session) {
-      res.clearCookie(COOKIE_NAME, { path: "/" });
-      return res.status(401).json({ message: "Not logged in." });
+      clearAuthCookies(res);
+
+      return res.status(401).json({
+        message: "Not logged in.",
+      });
     }
+
+    const role = getUserRole(session.email.toLowerCase());
 
     return res.json({
       authenticated: true,
-      user: { email: session.email },
+      user: {
+        email: session.email,
+        role,
+      },
       expiresAt: session.expiresAt,
     });
   } catch (error) {
     console.error("Session check failed:", error);
+
     return res.status(500).json({
       message: "Could not check the session.",
     });
@@ -308,24 +529,35 @@ router.get("/me", async (req, res) => {
 // POST /api/auth/logout
 router.post("/logout", async (req, res) => {
   try {
-    const token = getCookie(req, COOKIE_NAME);
+    const sessionToken = getCookie(req, COOKIE_NAME);
+    const refreshToken = getCookie(req, REFRESH_TOKEN_COOKIE);
 
-    if (token) {
-      await prisma.authSession.deleteMany({
-        where: { tokenHash: hashSessionToken(token) },
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      if (sessionToken) {
+        await tx.authSession.deleteMany({
+          where: { tokenHash: hashSessionToken(sessionToken) },
+        });
+      }
 
-    res.clearCookie(COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
+      if (refreshToken) {
+        await tx.refreshToken.updateMany({
+          where: {
+            tokenHash: hashSessionToken(refreshToken),
+            revokedAt: null,
+          },
+          data: { revokedAt: new Date() },
+        });
+      }
     });
 
-    return res.json({ message: "Logged out successfully." });
+    clearAuthCookies(res);
+
+    return res.json({
+      message: "Logged out successfully.",
+    });
   } catch (error) {
     console.error("Logout failed:", error);
+
     return res.status(500).json({
       message: "Could not log out. Please try again.",
     });

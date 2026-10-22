@@ -1,7 +1,5 @@
 
 import { NextResponse } from "next/server";
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
@@ -25,115 +23,43 @@ export async function POST(request: Request) {
       );
     }
 
-    const secret = process.env.OTP_HMAC_SECRET;
+    const authServiceUrl =
+      process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
 
-    if (!secret) {
-      console.error("OTP_HMAC_SECRET is missing.");
-      return NextResponse.json(
-        { message: "Authentication is not configured." },
-        { status: 500 }
-      );
-    }
+    const upstream = await fetch(
+      `${authServiceUrl}/api/auth/verify-otp`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+        cache: "no-store",
+      }
+    );
 
-    const challenge = await prisma.otpChallenge.findFirst({
-      where: { email, consumedAt: null },
-      orderBy: { createdAt: "desc" },
+    const data = await upstream.json().catch(() => ({
+      message: "The authentication service returned an invalid response.",
+    }));
+
+    const response = NextResponse.json(data, {
+      status: upstream.status,
     });
 
-    if (!challenge || challenge.expiresAt <= new Date()) {
-      return NextResponse.json(
-        { message: "The code is invalid or expired. Request a new code." },
-        { status: 400 }
-      );
+    // Preserve every cookie set by the Auth Service.
+    const getSetCookie = upstream.headers.getSetCookie;
+
+    if (typeof getSetCookie === "function") {
+      for (const cookie of getSetCookie.call(upstream.headers)) {
+        response.headers.append("Set-Cookie", cookie);
+      }
     }
-
-    if (challenge.attempts >= 5) {
-      await prisma.otpChallenge.update({
-        where: { id: challenge.id },
-        data: { consumedAt: new Date() },
-      });
-
-      return NextResponse.json(
-        { message: "Too many incorrect attempts. Request a new code." },
-        { status: 429 }
-      );
-    }
-
-    const expectedHash = createHmac("sha256", secret)
-      .update(`${email}:${otp}`)
-      .digest("hex");
-
-    const expectedBuffer = Buffer.from(expectedHash, "hex");
-    const actualBuffer = Buffer.from(challenge.codeHash, "hex");
-
-    const isValid =
-      expectedBuffer.length === actualBuffer.length &&
-      timingSafeEqual(expectedBuffer, actualBuffer);
-
-    if (!isValid) {
-      const attempts = challenge.attempts + 1;
-
-      await prisma.otpChallenge.update({
-        where: { id: challenge.id },
-        data: {
-          attempts,
-          ...(attempts >= 5 ? { consumedAt: new Date() } : {}),
-        },
-      });
-
-      return NextResponse.json(
-        {
-          message:
-            attempts >= 5
-              ? "Too many incorrect attempts. Request a new code."
-              : "The code is invalid or expired.",
-        },
-        { status: attempts >= 5 ? 429 : 400 }
-      );
-    }
-
-    // Consume the OTP only if another request hasn't already consumed it.
-    const consumed = await prisma.otpChallenge.updateMany({
-      where: { id: challenge.id, consumedAt: null, attempts: { lt: 5 } },
-      data: { consumedAt: new Date() },
-    });
-
-    if (consumed.count !== 1) {
-      return NextResponse.json(
-        { message: "This code has already been used. Request a new code." },
-        { status: 400 }
-      );
-    }
-
-    const sessionToken = randomBytes(32).toString("base64url");
-    const tokenHash = createHash("sha256")
-      .update(sessionToken)
-      .digest("hex");
-
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    await prisma.authSession.create({
-      data: { tokenHash, email, expiresAt },
-    });
-
-    const response = NextResponse.json({
-      message: "Sign-in successful.",
-    });
-
-    response.cookies.set("auth_session", sessionToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: expiresAt,
-    });
 
     return response;
   } catch (error) {
-    console.error("OTP verification failed:", error);
+    console.error("OTP verification proxy failed:", error);
+
     return NextResponse.json(
-      { message: "Could not verify the code. Please try again." },
-      { status: 500 }
+      { message: "Could not contact the authentication service. Please try again." },
+      { status: 502 }
     );
   }
 }

@@ -1,48 +1,69 @@
 
 import { NextResponse } from "next/server";
-import { createHash } from "crypto";
-import { prisma } from "@/lib/prisma";
+
+function clearAuthCookies(response: NextResponse) {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    expires: new Date(0),
+    maxAge: 0,
+  };
+
+  response.cookies.set("auth_session", "", cookieOptions);
+  response.cookies.set("access_token", "", cookieOptions);
+  response.cookies.set("refresh_token", "", cookieOptions);
+}
 
 export async function POST(request: Request) {
+  const authServiceUrl =
+    process.env.AUTH_SERVICE_URL ?? "http://localhost:4001";
+
   try {
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const sessionCookie = cookieHeader
-      .split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith("auth_session="));
+    const cookieHeader = request.headers.get("cookie");
 
-    const token = sessionCookie
-      ? decodeURIComponent(sessionCookie.slice("auth_session=".length))
-      : "";
+    const upstream = await fetch(
+      `${authServiceUrl}/api/auth/logout`,
+      {
+        method: "POST",
+        headers: cookieHeader ? { Cookie: cookieHeader } : {},
+        cache: "no-store",
+      }
+    );
 
-    if (token) {
-      const tokenHash = createHash("sha256")
-        .update(token)
-        .digest("hex");
+    const data = await upstream.json().catch(() => ({
+      message: "Logout request completed.",
+    }));
 
-      await prisma.authSession.deleteMany({
-        where: { tokenHash },
-      });
+    const response = NextResponse.json(data, {
+      status: upstream.status,
+    });
+
+    const getSetCookie = upstream.headers.getSetCookie;
+
+    if (typeof getSetCookie === "function") {
+      for (const cookie of getSetCookie.call(upstream.headers)) {
+        response.headers.append("Set-Cookie", cookie);
+      }
     }
 
-    const response = NextResponse.json({
-      message: "Signed out successfully.",
-    });
-
-    response.cookies.set("auth_session", "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: new Date(0),
-    });
+    clearAuthCookies(response);
 
     return response;
   } catch (error) {
-    console.error("Logout failed:", error);
-    return NextResponse.json(
-      { message: "Could not sign out. Please try again." },
-      { status: 500 }
+    console.error("Logout proxy failed:", error);
+
+    const response = NextResponse.json(
+      {
+        message:
+          "Signed out locally, but the authentication service could not be reached.",
+      },
+      { status: 502 }
     );
+
+    clearAuthCookies(response);
+
+    return response;
   }
 }
