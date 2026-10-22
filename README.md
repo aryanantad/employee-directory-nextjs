@@ -4,7 +4,7 @@ A full-stack Employee Directory application built with **Next.js, TypeScript, Pr
 
 **Repository:** [employee-directory-nextjs](https://github.com/aryanantad/employee-directory-nextjs)
 
-## Features
+## Features of Employee Directory - Next.js 
 
 - **Employee directory:** View and manage employee records, including names and roles.
 - **Employee CRUD API:** Retrieve employee records and perform supported employee operations.
