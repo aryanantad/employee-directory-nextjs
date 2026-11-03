@@ -8,7 +8,7 @@ const EMPLOYEE_SERVICE_URL =
 const AUTH_SERVICE_URL =
   process.env.AUTH_SERVICE_URL || "http://localhost:4001";
 
-type EmployeeMethod = "GET" | "POST" | "PUT" | "DELETE";
+type EmployeeMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 function readCookie(cookieHeader: string, name: string): string | null {
   for (const part of cookieHeader.split(";")) {
@@ -56,7 +56,10 @@ function replaceCookie(
     .split(";")
     .map((part) => part.trim())
     .filter(Boolean)
-    .filter((part) => part.slice(0, part.indexOf("=")) !== name);
+    .filter((part) => {
+      const separator = part.indexOf("=");
+      return separator < 0 || part.slice(0, separator) !== name;
+    });
 
   parts.push(`${name}=${encodeURIComponent(value)}`);
   return parts.join("; ");
@@ -66,7 +69,6 @@ async function forwardRequest(
   request: Request,
   method: EmployeeMethod,
 ) {
-  // Keep the existing database-backed session check.
   const user = await getAuthenticatedUser();
 
   if (!user) {
@@ -80,15 +82,9 @@ async function forwardRequest(
     let cookieHeader = request.headers.get("cookie") ?? "";
     let accessToken = readCookie(cookieHeader, "access_token");
 
-    const options: RequestInit = {
-      method,
-      headers: new Headers({
-        "Content-Type": "application/json",
-      }),
-      cache: "no-store",
-    };
-
-    const headers = options.headers as Headers;
+    const headers = new Headers({
+      "Content-Type": "application/json",
+    });
 
     if (cookieHeader) {
       headers.set("cookie", cookieHeader);
@@ -98,30 +94,43 @@ async function forwardRequest(
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
+    const options: RequestInit = {
+      method,
+      headers,
+      cache: "no-store",
+    };
+
     if (method !== "GET") {
       options.body = await request.text();
     }
 
     const targetUrl = new URL(`${EMPLOYEE_SERVICE_URL}/api/employees`);
 
-    if (method === "PUT" || method === "DELETE") {
-      if (typeof options.body === "string" && options.body) {
-        try {
-          const data = JSON.parse(options.body);
+    if (
+  method === "PUT" ||
+  method === "PATCH" ||
+  method === "DELETE"
+) {
+  if (typeof options.body === "string" && options.body) {
+    try {
+      const data = JSON.parse(options.body);
 
-          if (data.id !== undefined) {
-            targetUrl.pathname += `/${encodeURIComponent(String(data.id))}`;
-          }
-        } catch {
-          // Let Employee Service handle invalid JSON.
+      if (data.id !== undefined) {
+        targetUrl.pathname += `/${encodeURIComponent(String(data.id))}`;
+
+        if (method === "PATCH") {
+          targetUrl.pathname += "/manager";
         }
       }
+    } catch {
+      // The Employee Service will handle invalid JSON.
     }
+  }
+}
 
     let employeeResponse = await fetch(targetUrl.toString(), options);
     let refreshedCookies: string[] = [];
 
-    // Refresh and retry only when the access token is rejected.
     if (employeeResponse.status === 401 && cookieHeader) {
       const refreshResponse = await fetch(
         `${AUTH_SERVICE_URL}/api/auth/refresh`,
@@ -132,11 +141,7 @@ async function forwardRequest(
         },
       );
 
-      const getSetCookie = refreshResponse.headers.getSetCookie;
-
-      if (typeof getSetCookie === "function") {
-        refreshedCookies = getSetCookie.call(refreshResponse.headers);
-      }
+      refreshedCookies = refreshResponse.headers.getSetCookie();
 
       if (!refreshResponse.ok) {
         const response = NextResponse.json(
@@ -151,7 +156,6 @@ async function forwardRequest(
         return response;
       }
 
-      // Read the newly issued access token from Set-Cookie.
       let newAccessToken: string | null = null;
 
       for (const cookie of refreshedCookies) {
@@ -182,6 +186,8 @@ async function forwardRequest(
         );
       }
 
+      accessToken = newAccessToken;
+
       cookieHeader = replaceCookie(
         cookieHeader,
         "access_token",
@@ -190,7 +196,7 @@ async function forwardRequest(
 
       const retryHeaders = new Headers(options.headers);
       retryHeaders.set("cookie", cookieHeader);
-      retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
+      retryHeaders.set("Authorization", `Bearer ${accessToken}`);
 
       employeeResponse = await fetch(targetUrl.toString(), {
         ...options,
@@ -209,7 +215,6 @@ async function forwardRequest(
       },
     });
 
-    // Save rotated tokens in the browser.
     for (const cookie of refreshedCookies) {
       response.headers.append("Set-Cookie", cookie);
     }
@@ -239,4 +244,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   return forwardRequest(request, "DELETE");
+}
+
+export async function PATCH(request: Request) {
+  return forwardRequest(request, "PATCH");
 }

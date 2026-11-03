@@ -9,22 +9,38 @@ datasource db {
 }
 
 model Employee {
-  id   Int    @id @default(autoincrement())
-  name String
-  role String
+  id                 Int      @id @default(autoincrement())
+  name               String
+  role               String
+  email              String?
+  phoneNumber        String?
+  gender             String?
+  profileImagePath   String?
+  employeePermission String?
+  isActive           Boolean  @default(true)
 
+  managerId Int?
+  manager   Employee?  @relation("EmployeeReportingManager", fields: [managerId], references: [id], onDelete: SetNull)
+  reportees Employee[] @relation("EmployeeReportingManager")
+
+  memberships      TeamMembership[] @relation("EmployeeTeamMemberships")
+  ledTeams         Team[]            @relation("TeamLeader")
+  attendanceRecords AttendanceRecord[]
+  leaveRequests     LeaveRequest[]   @relation("LeaveRequester")
+  reviewedLeaves    LeaveRequest[]   @relation("LeaveReviewer")
+
+  @@index([managerId])
   @@map("employee")
 }
 
-
 model OtpChallenge {
-  id           String   @id @default(cuid())
-  email        String
-  codeHash     String
-  expiresAt    DateTime
-  attempts     Int      @default(0)
-  consumedAt   DateTime?
-  createdAt    DateTime @default(now())
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([email, createdAt])
 }
@@ -35,7 +51,113 @@ model AuthSession {
   email     String
   expiresAt DateTime
   createdAt DateTime @default(now())
+  lastActivityAt DateTime @default(now())
 
   @@index([email])
   @@index([expiresAt])
+}
+
+model RefreshToken {
+  id                 String    @id @default(cuid())
+  tokenHash          String    @unique
+  email              String
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  replacedByTokenHash String?
+  createdAt          DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model UserProfile {
+  email            String   @id
+  profileImagePath String?
+  updatedAt        DateTime @default(now()) @updatedAt
+}
+
+model UserRoleAssignment {
+  email     String   @id
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Team {
+  id               Int      @id @default(autoincrement())
+  name             String   @unique
+  description      String?
+  leaderEmployeeId Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  leader  Employee?        @relation("TeamLeader", fields: [leaderEmployeeId], references: [id], onDelete: SetNull)
+  members TeamMembership[]
+
+  @@index([leaderEmployeeId])
+}
+
+model TeamMembership {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  teamId     Int
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation("EmployeeTeamMemberships", fields: [employeeId], references: [id], onDelete: Cascade)
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, teamId])
+  @@index([teamId])
+}
+
+model AttendanceRecord {
+  id             String   @id @default(cuid())
+  employeeId     Int
+  checkIn        DateTime
+  checkOut       DateTime?
+  attendanceDate DateTime @db.Date
+  status         String   @default("present")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, attendanceDate])
+  @@index([attendanceDate])
+  @@index([employeeId, attendanceDate])
+}
+
+model LeaveType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isPaid      Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests LeaveRequest[]
+}
+
+model LeaveRequest {
+  id             String   @id @default(cuid())
+  employeeId     Int
+  leaveTypeId    String
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  reason         String
+  status         String   @default("pending")
+  decisionRemark String?
+  reviewerId     Int?
+  reviewedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  employee  Employee  @relation("LeaveRequester", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewer  Employee? @relation("LeaveReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, status])
+  @@index([reviewerId, status])
+  @@index([startDate, endDate])
 }
