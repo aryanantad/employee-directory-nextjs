@@ -1,236 +1,318 @@
-# Employee Directory — Next.js
+# Employee Directory & Management System
 
-A full-stack Employee Directory application built with **Next.js, TypeScript, Prisma, PostgreSQL, and Node.js microservices**. The project includes employee management, email-based OTP authentication, and an email feature for employee-related workflows.
+A full-stack employee management application built with **Next.js, TypeScript, Node.js, Express, Prisma, and PostgreSQL**. The application provides secure authentication, employee management, team management, attendance tracking, leave management, and role-based access control.
 
-**Repository:** [employee-directory-nextjs](https://github.com/aryanantad/employee-directory-nextjs)
+## Features
 
-## Features of Employee Directory - Next.js 
+### 1. Authentication & Security
+- OTP-based login and authentication.
+- Session management using secure authentication cookies.
+- Access token refresh and refresh token rotation.
+- Protected application routes.
+- Authentication and authorization handled through dedicated services.
+- Role-based access control across frontend and backend.
+- Protected HR account that cannot be demoted through role assignment.
 
-- **Employee directory:** View and manage employee records, including names and roles.
-- **Employee CRUD API:** Retrieve employee records and perform supported employee operations.
-- **Email OTP authentication:** Request a one-time password by email and verify it to authenticate.
-- **OTP security:** OTP expiry, hashed OTP storage, request and attempt limits, and session handling.
-- **Logout:** API endpoint and UI component for ending a session.
-- **Email integration:** Employee-related email functionality using Nodemailer.
-- **Database integration:** Prisma ORM for working with the application's database.
-- **Microservice architecture:** Separate Auth Service and Employee Service codebases.
-- **Next.js App Router:** Application pages and API routes organized using the App Router.
+### 2. Role-Based Access Control
 
-## Tech Stack
+The application supports three roles:
 
-| Technology | Purpose |
+| Feature | Employee | Manager | HR |
+|---|---|---|---|
+| View own profile | Yes | Yes | Yes |
+| View employee directory | No | No | Yes |
+| Create employees | No | No | Yes |
+| Assign employee roles | No | No | Yes |
+| Manage reporting managers | No | No | Yes |
+| Manage teams | No | No | Yes |
+| View own attendance | Yes | Yes | Yes |
+| Check in / Check out | Yes | Yes | No |
+| View team attendance | No | Yes | Yes |
+| Apply for leave | Yes | Yes | No |
+| View own leave requests | Yes | Yes | Yes |
+| Review team leave requests | No | Yes | No |
+| View organization leave records | No | No | Yes |
+
+Permissions are enforced on the backend as well as reflected in the frontend interface.
+
+### 3. Employee Management
+- Add and manage employee records.
+- View employee details in an employee directory.
+- Update employee information.
+- Activate and deactivate employee accounts.
+- Assign employee roles.
+- Assign reporting managers.
+- Manage employee application permissions.
+- Display employee information using reusable employee cards.
+
+### 4. Team Management
+- Create and manage teams.
+- View available teams.
+- Assign employees to teams.
+- Remove employees from teams.
+- Manage team membership.
+- View team information through a dedicated Teams page.
+- Provide team-related API routes.
+
+### 5. Attendance Management
+- Employee check-in and check-out.
+- Track daily attendance.
+- View attendance information.
+- Display attendance summaries.
+- Managers can view attendance for their teams.
+- HR can view organization-wide attendance records.
+- HR cannot perform employee check-in or check-out actions.
+
+### 6. Leave Management
+- Employees and managers can submit leave requests.
+- View leave requests and their statuses.
+- Managers can review requests from their direct reportees.
+- Managers can approve or reject eligible requests.
+- HR can view organization-wide leave records.
+- HR has read-only access to employee leave workflows.
+- Leave types and related configurations can be managed by HR.
+
+### 7. Profile Picture Management
+- Upload employee profile pictures.
+- Preview profile pictures.
+- Crop and adjust images before uploading.
+- Zoom and position images using the profile picture interface.
+- Display profile pictures across the application.
+
+### 8. Frontend
+- Next.js App Router architecture.
+- React and TypeScript components.
+- Reusable employee, profile, attendance, and leave components.
+- Role-aware navigation and dashboards.
+- Protected pages and API routes.
+- Responsive application layout.
+
+## Technology Stack
+
+| Category | Technologies |
 |---|---|
-| Next.js 16 | Web application and API routes |
-| React and TypeScript | User interface and typed application code |
-| Node.js | Microservice runtime |
-| PostgreSQL | Relational database |
-| Prisma ORM 6 | Database access and schema management |
-| Nodemailer | Email delivery |
-| Git and GitHub | Version control and source code hosting |
+| Frontend | Next.js 16, React 19 |
+| Language | TypeScript |
+| Backend | Node.js, Express.js |
+| Database | PostgreSQL |
+| ORM | Prisma |
+| Authentication | OTP authentication, access tokens, refresh tokens |
+| API Communication | REST APIs |
+| Package Management | npm |
+| Version Control | Git and GitHub |
 
 ## Architecture
 
-The repository contains the main Next.js application and two microservices:
+The application uses a microservices-based backend architecture.
 
 ```text
-employee-directory-nextjs/
+Employee Management System
+│
+├── Next.js Frontend
+│   ├── Authentication
+│   ├── Dashboard
+│   ├── Employee Directory
+│   ├── Teams
+│   ├── Attendance
+│   ├── Leave Management
+│   └── Profile Pictures
+│
+├── Auth Service
+│   ├── OTP Authentication
+│   ├── Token Management
+│   ├── User Roles
+│   └── Role Assignment
+│
+└── Employee Service
+    ├── Employee Management
+    ├── Team Management
+    ├── Attendance Management
+    └── Leave Management
+```
+
+### Service Ports
+
+| Application | Port |
+|---|---:|
+| Next.js Frontend | 3000 |
+| Authentication Service | 4001 |
+| Employee Service | 4002 |
+
+## Project Structure
+
+```text
+nextjs-learning/
+│
 ├── app/
 │   ├── api/
 │   │   ├── auth/
-│   │   │   ├── logout/
-│   │   │   ├── request-otp/
-│   │   │   └── verify-otp/
 │   │   ├── employees/
-│   │   └── ...
+│   │   ├── profile-picture/
+│   │   └── teams/
+│   │
+│   ├── components/
+│   │   ├── AttendanceLeavePanel.tsx
+│   │   └── ProfilePicture.tsx
+│   │
 │   ├── login/
-│   ├── LogoutButton.tsx
+│   ├── teams/
+│   ├── EmployeeCard.tsx
+│   ├── EmployeeForm.tsx
+│   ├── EmployeeList.tsx
+│   ├── globals.css
+│   ├── layout.tsx
 │   └── page.tsx
+│
 ├── employee-microservices/
 │   ├── auth-service/
+│   │   ├── prisma/
+│   │   └── src/
+│   │       ├── routes/
+│   │       └── server.ts
+│   │
 │   └── employee-service/
+│       ├── prisma/
+│       └── src/
+│           └── server.ts
+│
 ├── lib/
-│   └── auth.ts
+│   ├── auth.ts
+│   └── employee-service-proxy.ts
+│
 ├── prisma/
 │   ├── migrations/
 │   └── schema.prisma
+│
 ├── package.json
 └── README.md
 ```
-
-### Services
-
-- **Next.js application:** Provides the web interface and application API routes.
-- **Auth Service:** Separate Node.js service for authentication-related functionality.
-- **Employee Service:** Separate Node.js service for employee-related functionality.
-
-The services use local development ports **4001** (Auth Service) and **4002** (Employee Service). These local addresses must be replaced with reachable service URLs when deploying services separately.
 
 ## Getting Started
 
 ### Prerequisites
 
-Install the following:
+Install the following before running the project:
 
-- Node.js and npm
+- Node.js
+- npm
 - PostgreSQL database
 - Git
-- A code editor such as Visual Studio Code
 
-### 1. Clone the repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/aryanantad/employee-directory-nextjs.git
+```
+
+```bash
 cd employee-directory-nextjs
 ```
 
-### 2. Install dependencies
+### 2. Install Dependencies
+
+Install the root application dependencies:
 
 ```bash
 npm install
 ```
 
-### 3. Configure environment variables
-
-Create a local `.env` file in the project root. Configure the PostgreSQL connection string and the other environment variables required by the application.
-
-Example of the general configuration:
-
-```env
-DATABASE_URL="your_postgresql_connection_string"
-EMPLOYEE_SERVICE_URL="http://localhost:4002"
-```
-
-The example is a template, not a working credential. Configure email/SMTP credentials and any other variables required by the source code. Never commit `.env` files, passwords, OTP secrets, or database credentials to GitHub.
-
-### 4. Configure the database
-
-Review `prisma/schema.prisma` and the existing migration files. Ensure `DATABASE_URL` points to your intended development database before running any database commands.
-
-Generate Prisma Client:
-
-```bash
-npx prisma generate
-```
-
-Apply migrations only after checking that the database URL and migration plan are correct:
-
-```bash
-npx prisma migrate deploy
-```
-
-Use a dedicated development database when experimenting. Do not run database migrations against production without reviewing them first.
-
-### 5. Start the Next.js application
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-### 6. Run the microservices
-
-Each service has its own `package.json`. Open a separate terminal for each service, install its dependencies, configure its own required environment variables, and use its development script.
-
-Auth Service:
+Install dependencies for the authentication service:
 
 ```bash
 cd employee-microservices/auth-service
 npm install
-npm run dev
 ```
 
-Employee Service:
+Install dependencies for the employee service:
 
 ```bash
-cd employee-microservices/employee-service
+cd ../employee-service
 npm install
-npm run dev
 ```
 
-The services expect their own configuration and database connectivity where required. Running the Next.js app alone does not automatically start the two microservices.
+### 3. Configure Environment Variables
 
-## Authentication Flow
+Create the required `.env` files for the root application and both microservices.
 
-1. The user requests an OTP through the authentication interface.
-2. The application sends the OTP to the configured email address.
-3. The user submits the OTP for verification.
-4. The authentication flow validates the OTP and its expiry and applies the configured attempt limits.
-5. A valid verification establishes a session.
-6. The user can log out through the logout functionality.
+Configure the database connection strings, authentication secrets, service URLs, and other required environment variables according to each service's configuration.
 
-Email delivery and authentication require valid environment configuration and must be tested in the target environment.
+**Important:** Never commit `.env` files, database passwords, access tokens, or other credentials to GitHub.
 
-## API Routes
+### 4. Configure the Database
 
-| Route | Purpose |
-|---|---|
-| `POST /api/auth/request-otp` | Request an email OTP |
-| `POST /api/auth/verify-otp` | Verify an OTP |
-| `POST /api/auth/logout` | End the current session |
-| `/api/employees` | Employee API route |
-| `/api/employees/send-email` | Employee-related email functionality |
+Configure PostgreSQL and ensure the Prisma schemas and migrations are available for the corresponding services.
 
-Check the route handlers for the exact HTTP methods, request bodies, and response formats before integrating other clients.
+Apply the required migrations using the Prisma commands configured for each service.
 
-## Build and Validation
+### 5. Start the Services
 
-Run the production build for the main application:
+Start the authentication service, employee service, and Next.js application using the development scripts defined in their respective `package.json` files.
 
-```bash
-npm run build
+The expected service ports are:
+
+- Authentication Service: `4001`
+- Employee Service: `4002`
+- Next.js Application: `3000`
+
+Open the frontend at:
+
+```text
+http://localhost:3000
 ```
 
-Build the Auth Service:
+## Database & Migrations
 
-```bash
-cd employee-microservices/auth-service
-npm run build
+The project uses Prisma ORM with PostgreSQL.
+
+Database migrations cover:
+
+- Refresh token management.
+- Profile picture support.
+- User role assignments.
+- Team management.
+- Attendance and leave management.
+- Session last-activity tracking.
+
+Migration files are maintained in the relevant Prisma migration directories.
+
+## Authorization and Testing
+
+Role-based access has been tested for Employee, Manager, and HR accounts.
+
+The backend role-boundary tests passed **18 out of 18 checks** across the three roles.
+
+Tests covered:
+- Employee access restrictions.
+- Manager team-level permissions.
+- HR organization-wide read access.
+- Attendance and leave action restrictions.
+- Role assignment protection.
+- HR account protection.
+
+## GitHub Repository
+
+Repository: [employee-directory-nextjs](https://github.com/aryanantad/employee-directory-nextjs)
+
+Current development branch:
+
+```text
+feature/team-management
 ```
 
-Build the Employee Service:
+The latest development changes include employee management, team management, attendance, leave management, profile pictures, and authentication improvements.
 
-```bash
-cd employee-microservices/employee-service
-npm run build
-```
+## Future Improvements
 
-These builds have completed successfully in the development environment. Successful compilation does not by itself verify live email delivery, production database connectivity, inter-service communication, or production deployment.
+Potential future development areas:
 
-## Deployment Notes
+- Automated testing and continuous integration.
+- Improved application monitoring and error handling.
+- Production deployment and environment configuration.
+- Additional employee management features.
+- Further security and performance improvements.
 
-The source code is available on GitHub, but hosting the Next.js application does not automatically host the two microservices.
+---
 
-Before deploying:
+**Project Status:** Active Development
 
-- Configure production environment variables in the hosting platform.
-- Host each microservice on a reachable service or configure an appropriate supported deployment architecture.
-- Replace local service URLs such as `http://localhost:4002` with the correct reachable URL.
-- Configure production database connectivity and apply reviewed migrations.
-- Configure and test email delivery, authentication sessions, and employee API calls.
-- Keep all secrets out of source control.
-
-## Current Status
-
-- Next.js production build: successful.
-- Auth Service TypeScript build: successful.
-- Employee Service build and Prisma Client generation: successful.
-- GitHub commit: `750b488` — `Add OTP authentication and employee microservices`.
-- Production hosting and end-to-end production verification: still to be configured and tested.
-
-## Learning Outcomes
-
-This project has provided hands-on practice with:
-
-- Full-stack development using Next.js and TypeScript.
-- REST API routes and employee data operations.
-- Database schemas and Prisma ORM.
-- Email-based OTP authentication and session handling.
-- Splitting application functionality into microservices.
-- Environment configuration, build validation, and Git/GitHub workflows.
-
-## Author
-
-**Aryan Antad**
-
-[GitHub Repository](https://github.com/aryanantad/employee-directory-nextjs)
+**Primary Goal:** Build a secure, role-based employee management platform with separate authentication and employee microservices.
