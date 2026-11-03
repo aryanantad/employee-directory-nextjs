@@ -63,3 +63,12 @@ next-env.d.ts
 
 # Local backup files
 /app/api/employees/route.ts.backup
+
+# Local database backups
+*.dump
+*.backup
+*.before-pull
+
+# Local uploaded files and backup artifacts
+/employee-microservices/employee-service/uploads/
+/profile-picture-backup/
